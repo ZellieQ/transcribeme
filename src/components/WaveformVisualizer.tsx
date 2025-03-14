@@ -108,7 +108,7 @@ const WaveformVisualizer: React.FC<WaveformVisualizerProps> = ({
       
       ctx.fillRect(x, y, barWidth, barHeight);
     }
-  }, [audioData, width, height, barWidth, barColor]);
+  }, [audioData, width, height, barWidth, barGap, barColor]);
   
   return (
     <div className="waveform-container">

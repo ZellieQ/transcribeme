@@ -51,14 +51,12 @@ export class WebSpeechService implements TranscriptionService {
         this.recognition.onresult = (event: SpeechRecognitionEvent) => {
           if (signal.aborted) return;
           
-          let interimTranscript = '';
-          
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             if (event.results[i].isFinal) {
               finalTranscript += event.results[i][0].transcript + ' ';
-            } else {
-              interimTranscript += event.results[i][0].transcript;
             }
+            // We're only using final transcripts in this implementation
+            // Interim results are not needed for the current functionality
           }
         };
         

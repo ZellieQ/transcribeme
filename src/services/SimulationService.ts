@@ -47,7 +47,6 @@ export class SimulationService implements TranscriptionService {
           let elapsedTime = 0;
           const interval = 500; // Update every 500ms
           const simulationDuration = Math.min(10000, duration * 1000); // Max 10s
-          const steps = simulationDuration / interval;
           
           this.intervalId = window.setInterval(() => {
             if (signal.aborted) {
