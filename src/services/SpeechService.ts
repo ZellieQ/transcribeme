@@ -22,27 +22,33 @@ export class SpeechService {
   ): Promise<{ text: string; method: 'webSpeech' | 'whisper' | 'simulation' }> {
     this.resetTranscript();
     
-    // Try Web Speech API first
-    if (this.webSpeechService.isSupported()) {
-      try {
-        this.activeService = this.webSpeechService;
-        const text = await this.webSpeechService.transcribe(file, language);
-        this.finalTranscript = text;
-        return { text, method: 'webSpeech' };
-      } catch (error) {
-        console.warn('Web Speech API failed:', error);
-      }
-    }
+    console.log('Starting transcription with file:', file.name, 'language:', language);
     
-    // Try Whisper next
+    // For file transcription, prioritize Whisper as it's more reliable for audio files
     if (this.whisperService.isSupported()) {
       try {
+        console.log('Attempting transcription with Whisper...');
         this.activeService = this.whisperService;
         const text = await this.whisperService.transcribe(file, language);
         this.finalTranscript = text;
+        console.log('Whisper transcription successful');
         return { text, method: 'whisper' };
       } catch (error) {
         console.warn('Whisper failed:', error);
+      }
+    }
+    
+    // Try Web Speech API as fallback
+    if (this.webSpeechService.isSupported()) {
+      try {
+        console.log('Attempting transcription with Web Speech API...');
+        this.activeService = this.webSpeechService;
+        const text = await this.webSpeechService.transcribe(file, language);
+        this.finalTranscript = text;
+        console.log('Web Speech API transcription successful');
+        return { text, method: 'webSpeech' };
+      } catch (error) {
+        console.warn('Web Speech API failed:', error);
       }
     }
     
