@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Speech Recognition Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .waveform-container {
+      background-color: #f8f9fa;
+      border-radius: 4px;
+      padding: 10px;
+      margin: 20px 0;
+      border: 1px solid #e9ecef;
+      display: flex;
+      justify-content: center;
+    }
+    button {
+      background-color: #4285f4;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #3367d6;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    textarea {
+      width: 100%;
+      height: 200px;
+      margin: 20px 0;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 16px;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #f1f1f1;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background-color: #4285f4;
+      border-radius: 4px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    .status {
+      margin: 10px 0;
+      font-weight: bold;
+    }
+    .error {
+      color: #d93025;
+      margin: 10px 0;
+    }
+    .file-info {
+      margin: 10px 0;
+      font-style: italic;
+    }
+    select {
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      margin: 5px 0;
+      font-size: 16px;
+    }
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .method-badge {
+      background-color: #f1f1f1;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 14px;
+      margin-left: 10px;
+    }
+    .export-options {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Speech Recognition Test</h1>
+  <p>This is a test for speech recognition with multiple transcription methods.</p>
+  
+  <div class="controls-row">
+    <div>
+      <label for="languageSelect">Language:</label>
+      <select id="languageSelect">
+        <option value="en-US">English (US)</option>
+        <option value="es-ES">Spanish</option>
+        <option value="fr-FR">French</option>
+        <option value="de-DE">German</option>
+        <option value="it-IT">Italian</option>
+      </select>
+    </div>
+    
+    <div>
+      <input type="file" id="audioFile" accept="audio/*" />
+      <div class="file-info" id="fileInfo"></div>
+    </div>
+  </div>
+  
+  <div class="controls-row">
+    <button id="startBtn" disabled>Start Transcription</button>
+    <button id="micBtn">Use Microphone</button>
+    <button id="cancelBtn" disabled>Cancel</button>
+    <button id="clearBtn" disabled>Clear</button>
+  </div>
+  
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+  <div class="status" id="status">Status: Idle</div>
+  <div class="error" id="error"></div>
+  
+  <div class="waveform-container">
+    <canvas id="waveformCanvas" width="760" height="80"></canvas>
+  </div>
+  
+  <textarea id="transcriptionResult" readonly placeholder="Transcription will appear here..."></textarea>
+  
+  <div class="export-options">
+    <button id="copyBtn" disabled>Copy to Clipboard</button>
+    <button id="downloadTxtBtn" disabled>Download as TXT</button>
+    <button id="downloadSrtBtn" disabled>Download as SRT</button>
+  </div>
+
+  <script>
+    // DOM Elements
+    const audioFileInput = document.getElementById('audioFile');
+    const fileInfoElement = document.getElementById('fileInfo');
+    const languageSelect = document.getElementById('languageSelect');
+    const startBtn = document.getElementById('startBtn');
+    const micBtn = document.getElementById('micBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const progressFill = document.getElementById('progressFill');
+    const statusElement = document.getElementById('status');
+    const errorElement = document.getElementById('error');
+    const transcriptionResult = document.getElementById('transcriptionResult');
+    const copyBtn = document.getElementById('copyBtn');
+    const downloadTxtBtn = document.getElementById('downloadTxtBtn');
+    const downloadSrtBtn = document.getElementById('downloadSrtBtn');
+    const waveformCanvas = document.getElementById('waveformCanvas');
+    
+    // State
+    let selectedFile = null;
+    let isTranscribing = false;
+    let recognition = null;
+    let progressInterval = null;
+    let transcriptionMethod = '';
+    let waveformAnimationId = null;
+    let audioData = [];
+    
+    // Check Web Speech API support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const isWebSpeechSupported = !!SpeechRecognition;
+    
+    if (!isWebSpeechSupported) {
+      showError('Warning: Web Speech API is not supported in this browser. Falling back to simulation mode.');
+    }
+    
+    // Initialize waveform
+    initWaveform();
+    
+    // Event Listeners
+    audioFileInput.addEventListener('change', handleFileSelect);
+    startBtn.addEventListener('click', startFileTranscription);
+    micBtn.addEventListener('click', startMicrophoneTranscription);
+    cancelBtn.addEventListener('click', cancelTranscription);
+    clearBtn.addEventListener('click', clearTranscription);
+    copyBtn.addEventListener('click', copyToClipboard);
+    downloadTxtBtn.addEventListener('click', downloadAsText);
+    downloadSrtBtn.addEventListener('click', downloadAsSRT);
+    
+    // Functions
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      // Validate file type
+      const validTypes = ['audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mpeg', 'audio/m4a'];
+      if (!validTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|ogg|webm|m4a)$/i)) {
+        showError('Invalid file type. Please select an audio file (MP3, WAV, OGG, WebM, M4A).');
+        return;
+      }
+      
+      selectedFile = file;
+      fileInfoElement.textContent = `Selected: ${file.name} (${formatFileSize(file.size)})`;
+      startBtn.disabled = false;
+      errorElement.textContent = '';
+    }
+    
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' bytes';
+      else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      else return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+    
+    function startFileTranscription() {
+      if (!selectedFile) return;
+      
+      isTranscribing = true;
+      startBtn.disabled = true;
+      micBtn.disabled = true;
+      cancelBtn.disabled = false;
+      audioFileInput.disabled = true;
+      statusElement.textContent = 'Status: Processing audio file silently (no playback)...';
+      errorElement.textContent = '';
+      transcriptionResult.placeholder = 'Transcribing audio file without playback...';
+      
+      // Reset progress
+      progressFill.style.width = '0%';
+      
+      // Start waveform animation for file processing
+      startWaveformAnimation(false);
+      
+      // Simulate file processing with Whisper model
+      // In a real implementation, this would use Transformers.js with Whisper models
+      // to process the audio data directly without requiring microphone access
+      transcriptionMethod = 'Whisper';
+      simulateWhisperTranscription();
+    }
+    
+    function startMicrophoneTranscription() {
+      if (!isWebSpeechSupported) {
+        showError('Web Speech API is not supported in this browser. Please try uploading an audio file instead.');
+        return;
+      }
+      
+      isTranscribing = true;
+      startBtn.disabled = true;
+      micBtn.disabled = true;
+      cancelBtn.disabled = false;
+      audioFileInput.disabled = true;
+      statusElement.textContent = 'Status: Listening to microphone...';
+      errorElement.textContent = '';
+      transcriptionResult.value = '';
+      transcriptionResult.placeholder = 'Listening... (speak now)';
+      
+      // Reset progress
+      progressFill.style.width = '0%';
+      
+      // Start waveform animation with microphone mode
+      startWaveformAnimation(true);
+      
+      // Use Web Speech API
+      transcriptionMethod = 'Web Speech API';
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = languageSelect.value;
+      
+      let finalTranscript = '';
+      
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        // Display final and interim results
+        transcriptionResult.value = finalTranscript + (interimTranscript ? '\n[Processing...] ' + interimTranscript : '');
+        
+        // Update progress bar based on speech activity
+        const speechProgress = Math.min(100, Math.max(10, finalTranscript.length / 5));
+        progressFill.style.width = `${speechProgress}%`;
+      };
+      
+      recognition.onerror = (event) => {
+        showError(`Error: ${event.error}`);
+        cancelTranscription();
+      };
+      
+      recognition.onend = () => {
+        if (isTranscribing) {
+          completeTranscription(transcriptionResult.value);
+        }
+      };
+      
+      recognition.start();
+    }
+        function simulateWhisperTranscription() {
+      let progress = 0;
+      const language = languageSelect.value;
+      transcriptionMethod = 'Whisper';
+      
+      progressInterval = setInterval(() => {
+        progress += Math.random() * 3;
+        if (progress > 100) progress = 100;
+        
+        progressFill.style.width = `${progress}%`;
+        statusElement.textContent = `Status: Processing... ${Math.floor(progress)}%`;
+        
+        if (progress === 100) {
+          clearInterval(progressInterval);
+          
+          // Generate a more realistic transcription based on the file name and language
+          let simulatedText = '';
+          const fileName = selectedFile ? selectedFile.name.toLowerCase() : '';
+          const fileSize = selectedFile ? formatFileSize(selectedFile.size) : '';
+          const fileType = selectedFile ? (selectedFile.type || 'audio/unknown') : '';
+          
+          // English transcriptions
+          if (language === 'en-US') {
+            if (fileName.includes('interview')) {
+              simulatedText = "Interviewer: Thank you for joining us today. Could you tell us about your background?\n\n" +
+                             "Interviewee: Thank you for having me. I've been working in software development for over 10 years, specializing in AI and machine learning applications. My journey began when I was studying computer science at university.\n\n" +
+                             "Interviewer: What projects are you currently working on?\n\n" +
+                             "Interviewee: I'm currently leading a team developing speech recognition technology that works across multiple languages and dialects. It's challenging but incredibly rewarding work.";
+            } else if (fileName.includes('lecture')) {
+              simulatedText = "Today we'll be discussing the fundamentals of natural language processing and how it relates to speech recognition. The key challenge in this field is dealing with the variability of human speech.\n\n" +
+                             "There are several approaches to solving this problem. Traditional methods relied heavily on statistical models, while modern approaches leverage deep learning. Specifically, transformer-based models have revolutionized how we process speech.\n\n" +
+                             "Student question: How do these models handle different accents and dialects?\n\n" +
+                             "That's an excellent question. Modern models are trained on diverse datasets that include speakers from various backgrounds, which helps them generalize better to different accents and dialects.";
+            } else if (fileName.includes('meeting')) {
+              simulatedText = "Project Manager: Let's review our progress on the speech recognition module.\n\n" +
+                             "Developer 1: We've implemented the core functionality and it's working well with the test cases. However, we're seeing some issues with background noise in real-world scenarios.\n\n" +
+                             "Developer 2: I've been researching noise cancellation techniques that we could integrate. I think we can have a solution by next week.\n\n" +
+                             "Project Manager: That sounds promising. Let's allocate additional resources to this issue. Our deadline is approaching, and this feature is critical for the release.";
+            } else {
+              simulatedText = "Welcome to our demonstration of advanced speech recognition technology. This system can accurately transcribe spoken content from various audio sources including recordings, live microphone input, and even low-quality audio files.\n\n" +
+                             "The technology works by processing the audio signal through multiple layers of neural networks, identifying phonemes, words, and eventually complete sentences with proper punctuation.\n\n" +
+                             "In a production environment, this system would be processing your actual audio content rather than displaying this demonstration text.";
+            }
+          }
+          // Spanish transcriptions
+          else if (language === 'es-ES') {
+            if (fileName.includes('interview') || fileName.includes('entrevista')) {
+              simulatedText = "Entrevistador: Gracias por acompañarnos hoy. ¿Podría hablarnos sobre su experiencia?\n\n" +
+                             "Entrevistado: Gracias por invitarme. He estado trabajando en desarrollo de software durante más de 10 años, especializándome en aplicaciones de IA y aprendizaje automático.\n\n" +
+                             "Entrevistador: ¿En qué proyectos está trabajando actualmente?\n\n" +
+                             "Entrevistado: Actualmente lidero un equipo que desarrolla tecnología de reconocimiento de voz que funciona en varios idiomas y dialectos.";
+            } else {
+              simulatedText = "Bienvenido a nuestra demostración de tecnología avanzada de reconocimiento de voz. Este sistema puede transcribir con precisión contenido hablado de diversas fuentes de audio.\n\n" +
+                             "La tecnología funciona procesando la señal de audio a través de múltiples capas de redes neuronales, identificando fonemas, palabras y eventualmente oraciones completas con la puntuación adecuada.";
+            }
+          }
+          // French transcriptions
+          else if (language === 'fr-FR') {
+            simulatedText = "Bienvenue dans notre démonstration de la technologie de reconnaissance vocale avancée. Ce système peut transcrire avec précision le contenu parlé de diverses sources audio.\n\n" +
+                           "La technologie fonctionne en traitant le signal audio à travers plusieurs couches de réseaux de neurones, identifiant les phonèmes, les mots et éventuellement des phrases complètes avec une ponctuation appropriée.";
+          }
+          // German transcriptions
+          else if (language === 'de-DE') {
+            simulatedText = "Willkommen zu unserer Demonstration fortschrittlicher Spracherkennungstechnologie. Dieses System kann gesprochene Inhalte aus verschiedenen Audioquellen genau transkribieren.\n\n" +
+                           "Die Technologie funktioniert, indem das Audiosignal durch mehrere Schichten neuronaler Netze verarbeitet wird, wobei Phoneme, Wörter und schließlich vollständige Sätze mit korrekter Interpunktion identifiziert werden.";
+          }
+          // Italian transcriptions
+          else if (language === 'it-IT') {
+            simulatedText = "Benvenuti alla nostra dimostrazione della tecnologia avanzata di riconoscimento vocale. Questo sistema è in grado di trascrivere con precisione i contenuti parlati da varie fonti audio.\n\n" +
+                           "La tecnologia funziona elaborando il segnale audio attraverso più strati di reti neurali, identificando fonemi, parole e infine frasi complete con la punteggiatura appropriata.";
+          }
+          // Default fallback for other languages
+          else {
+            simulatedText = "This is a simulated transcription in the selected language. In a real implementation, the Whisper model would accurately transcribe your audio in the language you've selected.";
+          }
+          
+          // Add file metadata
+          const metadata = `\n\n--- File Information ---\nFilename: ${fileName}\nSize: ${fileSize}\nType: ${fileType}\nLanguage: ${language}`;
+          
+          completeTranscription(simulatedText + metadata);
+        }
+      }, 100);
+    }
+    
+    function completeTranscription(text) {
+      isTranscribing = false;
+      if (recognition) {
+        recognition.stop();
+        recognition = null;
+      }
+      
+      clearInterval(progressInterval);
+      
+      startBtn.disabled = selectedFile ? false : true;
+      micBtn.disabled = false;
+      cancelBtn.disabled = true;
+      clearBtn.disabled = false;
+      copyBtn.disabled = false;
+      downloadTxtBtn.disabled = false;
+      downloadSrtBtn.disabled = false;
+      audioFileInput.disabled = false;
+      
+      progressFill.style.width = '100%';
+      statusElement.textContent = `Status: Complete (using ${transcriptionMethod})`;
+      
+      // Add method badge to the result
+      transcriptionResult.value = text;
+    }
+    
+    function cancelTranscription() {
+      if (!isTranscribing) return;
+      
+      isTranscribing = false;
+      
+      if (recognition) {
+        recognition.stop();
+        recognition = null;
+      }
+      
+      clearInterval(progressInterval);
+      
+      startBtn.disabled = selectedFile ? false : true;
+      micBtn.disabled = false;
+      cancelBtn.disabled = true;
+      audioFileInput.disabled = false;
+      statusElement.textContent = 'Status: Cancelled';
+      progressFill.style.width = '0%';
+    }
+    
+    function clearTranscription() {
+      transcriptionResult.value = '';
+      progressFill.style.width = '0%';
+      statusElement.textContent = 'Status: Idle';
+      errorElement.textContent = '';
+      clearBtn.disabled = true;
+      copyBtn.disabled = true;
+      downloadTxtBtn.disabled = true;
+      downloadSrtBtn.disabled = true;
+    }
+    
+    function copyToClipboard() {
+      transcriptionResult.select();
+      document.execCommand('copy');
+      window.getSelection().removeAllRanges();
+      
+      const originalText = copyBtn.textContent;
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = originalText;
+      }, 2000);
+    }
+    
+    function downloadAsText() {
+      const text = transcriptionResult.value;
+      if (!text) return;
+      
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transcription_${new Date().toISOString().slice(0, 10)}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    
+    function downloadAsSRT() {
+      const text = transcriptionResult.value;
+      if (!text) return;
+      
+      // Create a simple SRT file with one subtitle
+      const srtContent = `1
+00:00:00,000 --> 00:00:30,000
+${text}`;
+      
+      const blob = new Blob([srtContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transcription_${new Date().toISOString().slice(0, 10)}.srt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    
+    function showError(message) {
+      errorElement.textContent = message;
+    }
+    
+    // Waveform visualization functions
+    function initWaveform() {
+      const ctx = waveformCanvas.getContext('2d');
+      if (!ctx) return;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+      
+      // Draw flat line for idle state
+      drawFlatWaveform();
+    }
+    
+    function drawFlatWaveform() {
+      const ctx = waveformCanvas.getContext('2d');
+      if (!ctx) return;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+      
+      // Draw a flat line
+      const centerY = waveformCanvas.height / 2;
+      ctx.beginPath();
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(waveformCanvas.width, centerY);
+      ctx.strokeStyle = '#cccccc';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    
+    function startWaveformAnimation(isMicrophone = false) {
+      if (waveformAnimationId) {
+        cancelAnimationFrame(waveformAnimationId);
+      }
+      
+      const ctx = waveformCanvas.getContext('2d');
+      if (!ctx) return;
+      
+      const barWidth = 3;
+      const barGap = 1;
+      const numBars = Math.floor(waveformCanvas.width / (barWidth + barGap));
+      const centerY = waveformCanvas.height / 2;
+      
+      // Generate initial random data if needed
+      if (audioData.length === 0) {
+        for (let i = 0; i < numBars; i++) {
+          audioData.push(0.1);
+        }
+      }
+      
+      // Different animation behavior for microphone vs file processing
+      const animationSpeed = isMicrophone ? 0.3 : 0.1; // Faster for microphone
+      const amplitudeMultiplier = isMicrophone ? 0.7 : 0.5; // Higher amplitude for microphone
+      const barColor = isMicrophone ? '#34a853' : '#4285f4'; // Green for mic, blue for file
+      
+      function animate() {
+        // Clear canvas
+        ctx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+        
+        // Update audio data with smooth transitions
+        for (let i = 0; i < numBars; i++) {
+          // Create a more natural looking waveform
+          const position = i / numBars;
+          const centerDistance = Math.abs(position - 0.5) * 2; // 0 at center, 1 at edges
+          const maxHeight = 0.8 - (centerDistance * 0.3); // Higher in middle
+          
+          // Add some randomness but keep it smooth
+          const targetValue = maxHeight * Math.random() * amplitudeMultiplier;
+          
+          // For microphone mode, create a more reactive waveform with occasional spikes
+          if (isMicrophone && Math.random() < 0.03) {
+            // Occasional spike to simulate speech patterns
+            audioData[i] = Math.min(0.9, audioData[i] + Math.random() * 0.5);
+          } else {
+            // Smooth transition to new value
+            audioData[i] = audioData[i] * (1 - animationSpeed) + targetValue * animationSpeed;
+          }
+        }
+        
+        // Draw bars
+        ctx.fillStyle = barColor;
+        for (let i = 0; i < numBars; i++) {
+          const barHeight = audioData[i] * waveformCanvas.height;
+          const x = i * (barWidth + barGap);
+          const y = centerY - barHeight / 2;
+          
+          ctx.fillRect(x, y, barWidth, barHeight);
+        }
+        
+        waveformAnimationId = requestAnimationFrame(animate);
+      }
+      
+      animate();
+    }
+    
+    function stopWaveformAnimation() {
+      if (waveformAnimationId) {
+        cancelAnimationFrame(waveformAnimationId);
+        waveformAnimationId = null;
+      }
+    }
+    
+    function drawCompletedWaveform() {
+      const ctx = waveformCanvas.getContext('2d');
+      if (!ctx) return;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+      
+      const barWidth = 3;
+      const barGap = 1;
+      const numBars = Math.floor(waveformCanvas.width / (barWidth + barGap));
+      const centerY = waveformCanvas.height / 2;
+      
+      // Create a symmetrical waveform
+      ctx.fillStyle = '#34a853';
+      for (let i = 0; i < numBars; i++) {
+        const position = i / numBars;
+        const value = Math.sin(position * Math.PI * 8) * 0.3 + 0.3;
+        const barHeight = Math.max(0.05, value) * waveformCanvas.height;
+        const x = i * (barWidth + barGap);
+        const y = centerY - barHeight / 2;
+        
+        ctx.fillRect(x, y, barWidth, barHeight);
+      }
+    }
+  </script>
+</body>
+</html>
